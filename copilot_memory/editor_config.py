@@ -164,6 +164,18 @@ def configure_claude_code() -> str:
             }
         },
         "hooks": {
+            "UserPromptSubmit": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"{hook_command} hook-search",
+                            "timeout": 60,
+                        }
+                    ],
+                }
+            ],
             "Stop": [
                 {
                     "matcher": "",

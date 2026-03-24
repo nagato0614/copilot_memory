@@ -1,7 +1,7 @@
-"""Claude Code Stop hook handler.
+"""Claude Code hook handlers.
 
-Reads the transcript from a Claude Code Stop event and saves the latest
-Q&A pair to the memory database.
+- Stop hook: saves the latest Q&A pair to memory after each response
+- UserPromptSubmit hook: searches memory and injects context before each response
 """
 
 import json
@@ -41,6 +41,14 @@ def _read_transcript(transcript_path: str) -> list[dict]:
     return messages
 
 
+def _get_role(message: dict) -> str:
+    """Extract the role from a transcript message, handling nested formats."""
+    role = message.get("role", "")
+    if not role and "message" in message and isinstance(message["message"], dict):
+        role = message["message"].get("role", "")
+    return role
+
+
 def _extract_text(message: dict) -> str:
     """Extract human-readable text from a transcript message.
 
@@ -78,36 +86,27 @@ def _extract_text(message: dict) -> str:
 
 
 def _extract_last_turn(messages: list[dict]) -> tuple[str, str] | None:
-    """Extract the last meaningful user/assistant turn from transcript.
+    """Extract the last meaningful user→assistant pair from transcript.
 
-    Iterates through all messages and keeps the last user text and
-    last assistant text that contain actual readable content.
+    Tracks pairs: when a user message arrives, record it; when the next
+    assistant message with text arrives, form a pair. This ensures the
+    question and answer always correspond to the same turn.
     """
-    last_user = ""
-    last_assistant = ""
+    current_user = ""
+    last_pair: tuple[str, str] | None = None
 
     for msg in messages:
-        role = msg.get("role", "")
-        # Also check nested message format
-        if not role and "message" in msg and isinstance(msg["message"], dict):
-            role = msg["message"].get("role", "")
-        # Some formats use "type" instead of "role"
-        if not role:
-            role = msg.get("type", "")
-
+        role = _get_role(msg)
         text = _extract_text(msg)
         if not text.strip():
             continue
 
         if role in ("human", "user"):
-            last_user = text.strip()
-        elif role == "assistant":
-            last_assistant = text.strip()
+            current_user = text.strip()
+        elif role == "assistant" and current_user:
+            last_pair = (current_user, text.strip())
 
-    if not last_user or not last_assistant:
-        return None
-
-    return last_user, last_assistant
+    return last_pair
 
 
 def _truncate(text: str, max_chars: int) -> str:
@@ -130,7 +129,7 @@ def _is_trivial(user_text: str, assistant_text: str) -> bool:
 
 
 def handle_stop_hook() -> None:
-    """Main handler for Claude Code Stop hook.
+    """Handler for Claude Code Stop hook.
 
     Reads JSON from stdin, extracts the latest Q&A from the transcript,
     and saves it to the memory database.
@@ -172,7 +171,7 @@ def handle_stop_hook() -> None:
         project = Path(cwd).name if cwd else ""
 
         question = _truncate(user_text, 500)
-        answer = _truncate(assistant_text, 1000)
+        answer = _truncate(assistant_text, 2000)
 
         logger.info("Saving: question=%s answer=%s...", question[:80], answer[:80])
 
@@ -183,4 +182,47 @@ def handle_stop_hook() -> None:
 
     except Exception as e:
         logger.exception("Hook error: %s", e)
+    # Always exit 0 — never block the user
+
+
+def handle_prompt_hook() -> None:
+    """Handler for Claude Code UserPromptSubmit hook.
+
+    Reads the user's prompt from stdin, searches memory for relevant context,
+    and prints results to stdout. Claude Code injects stdout content into
+    the conversation as additional context.
+    Always exits 0 to avoid blocking the user.
+    """
+    try:
+        _setup_logging()
+        raw = sys.stdin.read()
+        if not raw:
+            return
+
+        event = json.loads(raw)
+        query = event.get("user_prompt", "")
+        logger.info("Received UserPromptSubmit: query=%s...", query[:80] if query else "")
+
+        # Skip very short or empty queries
+        if len(query.strip()) < 5:
+            logger.info("Query too short, skipping search")
+            return
+
+        from .search import hybrid_search
+
+        results = hybrid_search(query, limit=5)
+        if not results:
+            logger.info("No memory results found")
+            return
+
+        logger.info("Found %d memory results", len(results))
+
+        # Output to stdout — Claude Code injects this as context
+        lines = ["[copilot-memory] 関連する過去の記憶:"]
+        for r in results:
+            lines.append(f"- [{r.project or 'general'}] {r.question}: {r.answer}")
+        print("\n".join(lines))
+
+    except Exception as e:
+        logger.exception("Prompt hook error: %s", e)
     # Always exit 0 — never block the user

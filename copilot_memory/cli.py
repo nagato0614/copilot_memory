@@ -144,6 +144,7 @@ def main() -> None:
     init_parser.add_argument("--no-editor", action="store_true", help="Skip editor settings configuration")
 
     subparsers.add_parser("hook-save", help="Save memory from Claude Code Stop hook (reads stdin)")
+    subparsers.add_parser("hook-search", help="Search memory from Claude Code UserPromptSubmit hook (reads stdin)")
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Remove copilot-memory installation (~/.copilot-memory/)")
     uninstall_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
@@ -155,6 +156,9 @@ def main() -> None:
     elif args.command == "hook-save":
         from .hook import handle_stop_hook
         handle_stop_hook()
+    elif args.command == "hook-search":
+        from .hook import handle_prompt_hook
+        handle_prompt_hook()
     elif args.command == "uninstall":
         cmd_uninstall(args)
     elif args.command == "serve":

@@ -13,21 +13,22 @@ mcp = FastMCP(
     name="copilot-memory",
     instructions=(
         "Long-term memory system for AI coding assistants. "
-        "Use search_memory before answering to recall relevant context. "
-        "Use save_memory after answering to store new Q&A pairs."
+        "MANDATORY: Call search_memory BEFORE every response to retrieve relevant context. "
+        "MANDATORY: Call save_memory AFTER every response — multiple times, one per topic. "
+        "Save not just Q&A, but also design decisions, work logs, insights, and discussions."
     ),
 )
 
 
 @mcp.tool()
 def search_memory(query: str, limit: int = 10, project: str = "") -> str:
-    """Search long-term memory for relevant past Q&A pairs.
+    """MANDATORY: Search long-term memory for relevant context.
 
-    Call this BEFORE answering the user to retrieve relevant context
-    from past conversations.
+    Call this BEFORE every response to retrieve relevant past knowledge.
+    Do NOT skip this step — past context improves response quality.
 
     Args:
-        query: The search query (typically the user's current question)
+        query: The search query (typically the user's current question or topic)
         limit: Maximum number of results to return (default: 10)
         project: Optional project name to filter results
     """
@@ -52,16 +53,17 @@ def search_memory(query: str, limit: int = 10, project: str = "") -> str:
 def save_memory(
     question: str, answer: str, project: str = "", tags: str = ""
 ) -> str:
-    """Save a Q&A pair to long-term memory.
+    """MANDATORY: Save knowledge to long-term memory.
 
-    Call this AFTER answering the user to store the interaction for
-    future reference. Automatically deduplicates near-identical entries.
+    Call this AFTER every response — multiple times, once per distinct topic.
+    Save Q&A, design decisions, work logs, insights, and discussions.
+    Automatically deduplicates near-identical entries.
 
     Args:
-        question: The user's question (condensed if very long)
-        answer: A concise summary of the response (2-5 sentences)
+        question: Topic title (short, searchable — can be a question, task name, or decision title)
+        answer: Detailed explanation (3-8 sentences with file paths, commands, reasoning)
         project: Optional project/workspace name
-        tags: Optional comma-separated topic tags (e.g., "python,debugging")
+        tags: Optional comma-separated topic tags (e.g., "python,auth,design-decision")
     """
     result = save_chunk(question, answer, project=project, tags=tags)
     return json.dumps({"id": result.id, "status": result.status})
