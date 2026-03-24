@@ -1,9 +1,7 @@
 """Tests for Claude Code Stop hook handler."""
 
 import json
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from copilot_memory.hook import (
     _extract_last_turn,
@@ -25,9 +23,62 @@ def test_extract_text_string():
     assert _extract_text({"content": "hello"}) == "hello"
 
 
-def test_extract_text_list():
-    msg = {"content": [{"text": "part1"}, {"text": "part2"}]}
+def test_extract_text_list_with_type():
+    """Text blocks with type='text' are extracted."""
+    msg = {"content": [{"type": "text", "text": "part1"}, {"type": "text", "text": "part2"}]}
     assert _extract_text(msg) == "part1\npart2"
+
+
+def test_extract_text_skips_tool_use():
+    """tool_use blocks are not included in extracted text."""
+    msg = {
+        "content": [
+            {"type": "text", "text": "Here is the answer."},
+            {"type": "tool_use", "id": "toolu_123", "name": "Bash", "input": {"command": "ls"}},
+        ]
+    }
+    assert _extract_text(msg) == "Here is the answer."
+
+
+def test_extract_text_tool_use_only():
+    """Messages with only tool_use blocks return empty string."""
+    msg = {
+        "content": [
+            {"type": "tool_use", "id": "toolu_123", "name": "Bash", "input": {"command": "git push"}},
+        ]
+    }
+    assert _extract_text(msg) == ""
+
+
+def test_extract_text_claude_api_format():
+    """Real Claude API response format is handled correctly."""
+    msg = {
+        "model": "claude-opus-4-6",
+        "id": "msg_01BYH",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+            {"type": "tool_use", "id": "toolu_01Aq", "name": "Bash",
+             "input": {"command": "git push origin main"}},
+        ],
+        "stop_reason": "tool_use",
+    }
+    # Should return empty — no text content, only tool_use
+    assert _extract_text(msg) == ""
+
+
+def test_extract_text_mixed_content():
+    """Mixed text + tool_use extracts only text."""
+    msg = {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "Let me push the changes."},
+            {"type": "tool_use", "id": "toolu_01", "name": "Bash",
+             "input": {"command": "git push"}},
+            {"type": "text", "text": "Done! Changes pushed successfully."},
+        ]
+    }
+    assert _extract_text(msg) == "Let me push the changes.\nDone! Changes pushed successfully."
 
 
 def test_extract_text_empty():
@@ -61,21 +112,48 @@ def test_extract_last_turn_basic():
     assert result == ("Question 2", "Answer 2")
 
 
+def test_extract_last_turn_skips_tool_only_messages():
+    """Assistant messages with only tool_use are skipped."""
+    messages = [
+        {"role": "human", "content": "Push the code"},
+        {"role": "assistant", "content": [
+            {"type": "text", "text": "I'll push now."},
+        ]},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_01", "name": "Bash",
+             "input": {"command": "git push"}},
+        ]},
+    ]
+    result = _extract_last_turn(messages)
+    assert result is not None
+    assert result[0] == "Push the code"
+    assert result[1] == "I'll push now."
+
+
 def test_extract_last_turn_user_only():
     messages = [{"role": "human", "content": "Hello"}]
     assert _extract_last_turn(messages) is None
 
 
-def test_extract_last_turn_with_type_field():
+def test_extract_last_turn_real_api_format():
+    """Handles real Claude API response objects in transcript."""
     messages = [
-        {"type": "user", "content": "Q"},
-        {"type": "assistant", "content": "A long enough answer here"},
+        {"role": "user", "content": "このプロジェクトの概要を教えて"},
+        {
+            "model": "claude-opus-4-6",
+            "id": "msg_01BYH",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "このプロジェクトはMCPサーバーとして動作する長期記憶システムです。"},
+            ],
+            "stop_reason": "end_turn",
+        },
     ]
-    # "type" field is also checked
     result = _extract_last_turn(messages)
-    # We only check role="human"|"user" and role="assistant"
-    # type="user" maps to role check — let's see
-    assert result is None or result[0] == "Q"
+    assert result is not None
+    assert result[0] == "このプロジェクトの概要を教えて"
+    assert "MCPサーバー" in result[1]
 
 
 def test_truncate_short():

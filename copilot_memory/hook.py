@@ -42,39 +42,67 @@ def _read_transcript(transcript_path: str) -> list[dict]:
 
 
 def _extract_text(message: dict) -> str:
-    """Extract text content from a transcript message."""
-    # Handle various transcript formats
-    content = message.get("content", message.get("message", ""))
+    """Extract human-readable text from a transcript message.
+
+    Handles Claude API response format where content is a list of blocks:
+    - {"type": "text", "text": "..."} → extract text
+    - {"type": "tool_use", ...} → skip (not human-readable)
+    - {"type": "tool_result", ...} → skip
+    Also handles simple string content and nested message formats.
+    """
+    # Some transcript formats wrap the actual message
+    if "message" in message and isinstance(message["message"], dict):
+        return _extract_text(message["message"])
+
+    content = message.get("content", "")
+
     if isinstance(content, str):
         return content
+
     if isinstance(content, list):
         parts = []
         for block in content:
             if isinstance(block, str):
                 parts.append(block)
             elif isinstance(block, dict):
-                text = block.get("text", "")
-                if text:
-                    parts.append(text)
+                block_type = block.get("type", "")
+                # Only extract actual text blocks
+                if block_type == "text":
+                    text = block.get("text", "")
+                    if text:
+                        parts.append(text)
+                # Skip tool_use, tool_result, etc. — not human-readable
         return "\n".join(parts)
-    return str(content) if content else ""
+
+    return ""
 
 
 def _extract_last_turn(messages: list[dict]) -> tuple[str, str] | None:
-    """Extract the last user/assistant turn from transcript messages."""
+    """Extract the last meaningful user/assistant turn from transcript.
+
+    Iterates through all messages and keeps the last user text and
+    last assistant text that contain actual readable content.
+    """
     last_user = ""
     last_assistant = ""
 
     for msg in messages:
-        role = msg.get("role", msg.get("type", ""))
+        role = msg.get("role", "")
+        # Also check nested message format
+        if not role and "message" in msg and isinstance(msg["message"], dict):
+            role = msg["message"].get("role", "")
+        # Some formats use "type" instead of "role"
+        if not role:
+            role = msg.get("type", "")
+
         text = _extract_text(msg)
-        if not text:
+        if not text.strip():
             continue
 
         if role in ("human", "user"):
-            last_user = text
-        elif role in ("assistant",):
-            last_assistant = text
+            last_user = text.strip()
+        elif role == "assistant":
+            last_assistant = text.strip()
 
     if not last_user or not last_assistant:
         return None
@@ -130,7 +158,7 @@ def handle_stop_hook() -> None:
 
         turn = _extract_last_turn(messages)
         if turn is None:
-            logger.info("Could not extract Q&A turn")
+            logger.info("Could not extract Q&A turn (no text content found)")
             return
 
         user_text, assistant_text = turn
@@ -145,6 +173,8 @@ def handle_stop_hook() -> None:
 
         question = _truncate(user_text, 500)
         answer = _truncate(assistant_text, 1000)
+
+        logger.info("Saving: question=%s answer=%s...", question[:80], answer[:80])
 
         from .storage import save_chunk
 
