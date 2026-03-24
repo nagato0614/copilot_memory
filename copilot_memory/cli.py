@@ -52,6 +52,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     do_copilot = args.copilot or (not args.copilot and not args.claude)
     do_claude = args.claude or (not args.copilot and not args.claude)
+    do_editor = not args.no_editor
 
     if do_copilot:
         template = _load_template("copilot-instructions.md")
@@ -65,9 +66,23 @@ def cmd_init(args: argparse.Namespace) -> None:
         target = project_dir / "CLAUDE.md"
         print(_inject_into_file(target, block))
 
+    if do_editor:
+        from .editor_config import configure_claude_code, configure_vscode
+
+        print()
+        if do_copilot:
+            try:
+                print(configure_vscode())
+            except Exception as e:
+                print(f"[WARN] Could not configure VS Code: {e}")
+        if do_claude:
+            try:
+                print(configure_claude_code())
+            except Exception as e:
+                print(f"[WARN] Could not configure Claude Code: {e}")
+
     print()
     print("Done! Memory instructions have been added to your project.")
-    print("Make sure the copilot-memory MCP server is configured in your editor settings.")
 
 
 def cmd_uninstall(args: argparse.Namespace) -> None:
@@ -126,6 +141,9 @@ def main() -> None:
     init_parser = subparsers.add_parser("init", help="Initialize memory prompts in current project")
     init_parser.add_argument("--copilot", action="store_true", help="Only set up GitHub Copilot instructions")
     init_parser.add_argument("--claude", action="store_true", help="Only set up Claude Code instructions")
+    init_parser.add_argument("--no-editor", action="store_true", help="Skip editor settings configuration")
+
+    subparsers.add_parser("hook-save", help="Save memory from Claude Code Stop hook (reads stdin)")
 
     uninstall_parser = subparsers.add_parser("uninstall", help="Remove copilot-memory installation (~/.copilot-memory/)")
     uninstall_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
@@ -134,6 +152,9 @@ def main() -> None:
 
     if args.command == "init":
         cmd_init(args)
+    elif args.command == "hook-save":
+        from .hook import handle_stop_hook
+        handle_stop_hook()
     elif args.command == "uninstall":
         cmd_uninstall(args)
     elif args.command == "serve":

@@ -105,56 +105,41 @@ print('[OK] Database initialized')
 
 COPILOT_MEMORY_BIN="$VENV_DIR/bin/copilot-memory"
 
+# 8. Auto-configure editor settings (VS Code + Claude Code)
+echo ""
+echo "=== Configuring Editor Settings ==="
+echo ""
+echo "[..] Configuring VS Code settings..."
+"$VENV_DIR/bin/python" -c "
+from copilot_memory.editor_config import configure_vscode
+print(configure_vscode())
+" 2>/dev/null || echo "[WARN] Could not configure VS Code settings (VS Code may not be installed)"
+
+echo "[..] Configuring Claude Code settings..."
+"$VENV_DIR/bin/python" -c "
+from copilot_memory.editor_config import configure_claude_code
+print(configure_claude_code())
+" 2>/dev/null || echo "[WARN] Could not configure Claude Code settings"
+
 echo ""
 echo "=== Installation Complete ==="
 echo ""
-echo "Add the following to your editor settings:"
-echo ""
-echo "--- GitHub Copilot (VS Code settings.json) ---"
-cat <<EOF
-{
-  "mcp": {
-    "servers": {
-      "copilot-memory": {
-        "command": "$VENV_DIR/bin/python",
-        "args": ["-m", "copilot_memory.server"]
-      }
-    }
-  }
-}
-EOF
-
-echo ""
-echo "--- Claude Code (~/.claude/settings.json) ---"
-cat <<EOF
-{
-  "mcpServers": {
-    "copilot-memory": {
-      "command": "$VENV_DIR/bin/python",
-      "args": ["-m", "copilot_memory.server"]
-    }
-  }
-}
-EOF
-
-echo ""
-echo "=== Per-Project Setup ==="
-echo ""
-echo "To add memory instructions to your project, run inside the project directory:"
+echo "Per-project setup: run inside your project directory to add memory prompts:"
 echo "  $COPILOT_MEMORY_BIN init"
 echo ""
 echo "Options:"
 echo "  $COPILOT_MEMORY_BIN init              # Both Copilot & Claude"
 echo "  $COPILOT_MEMORY_BIN init --copilot    # GitHub Copilot only"
 echo "  $COPILOT_MEMORY_BIN init --claude     # Claude Code only"
+echo "  $COPILOT_MEMORY_BIN init --no-editor  # Prompts only, skip editor settings"
 echo ""
 
 # Offer to run init in the current directory (only if interactive terminal)
 if [ -t 0 ]; then
-    read -p "Run 'copilot-memory init' in the current directory? [y/N] " -n 1 -r
+    read -p "Run 'copilot-memory init --no-editor' in the current directory? [y/N] " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        "$COPILOT_MEMORY_BIN" init
+        "$COPILOT_MEMORY_BIN" init --no-editor
     fi
 else
     echo "Run '$COPILOT_MEMORY_BIN init' inside your project to set up memory prompts."
