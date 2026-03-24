@@ -1,0 +1,32 @@
+[project]
+name = "copilot-memory"
+version = "0.1.0"
+description = "Local long-term memory system for AI coding assistants (GitHub Copilot, Claude Code) via MCP server"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "mcp>=1.0.0",
+    "sentence-transformers",
+    "sqlite-vec",
+    "apsw",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.scripts]
+copilot-memory = "copilot_memory.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["copilot_memory*"]
+
+[tool.setuptools.package-data]
+"copilot_memory.templates" = ["*.md"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

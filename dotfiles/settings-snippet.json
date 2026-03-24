@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "copilot-memory": {
+        "command": "~/.copilot-memory/venv/bin/python",
+        "args": ["-m", "copilot_memory.server"]
+      }
+    }
+  }
+}

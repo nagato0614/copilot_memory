@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.egg-info
+dist
+build
+tests
+dotfiles
+*.md
+*.sh
+.dockerignore
+Dockerfile
+.claude
