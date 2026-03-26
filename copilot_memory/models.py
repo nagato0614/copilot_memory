@@ -22,6 +22,7 @@ class SearchResult(BaseModel):
     id: str
     content: str
     project: str = ""
+    tags: str = ""
     source_path: str = ""
     score: float
     created_at: float

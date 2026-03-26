@@ -23,6 +23,10 @@ SUPPORTED_EXTENSIONS = {
     ".py",
     ".rs",
     ".dart",
+    ".go",
+    ".ts", ".tsx", ".js", ".jsx",
+    ".swift",
+    ".kt",
     # Config/data
     ".yml", ".yaml", ".toml", ".json", ".xml",
     ".txt", ".rst", ".sql", ".sh",
@@ -204,6 +208,39 @@ def split_dart(text: str) -> list[str]:
     return _filter_chunks(sections)
 
 
+def split_go(text: str) -> list[str]:
+    """Split Go by func/type definitions."""
+    sections = re.split(r"(?=^(?:func |type ))", text, flags=re.MULTILINE)
+    return _filter_chunks(sections)
+
+
+def split_typescript_javascript(text: str) -> list[str]:
+    """Split TypeScript/JavaScript by export/function/class/const definitions."""
+    sections = re.split(
+        r"(?=^(?:export |function |class |const |let |interface |type |async function ))",
+        text, flags=re.MULTILINE,
+    )
+    return _filter_chunks(sections)
+
+
+def split_swift(text: str) -> list[str]:
+    """Split Swift by func/class/struct/enum/protocol definitions."""
+    sections = re.split(
+        r"(?=^(?:(?:public |private |internal |open |fileprivate )?(?:func |class |struct |enum |protocol )))",
+        text, flags=re.MULTILINE,
+    )
+    return _filter_chunks(sections)
+
+
+def split_kotlin(text: str) -> list[str]:
+    """Split Kotlin by fun/class/object/interface definitions."""
+    sections = re.split(
+        r"(?=^(?:(?:public |private |internal |protected |open |abstract |override )*(?:fun |class |object |interface |data class |sealed class )))",
+        text, flags=re.MULTILINE,
+    )
+    return _filter_chunks(sections)
+
+
 def split_fixed_length(text: str, max_chars: int = 1500, overlap: int = 200) -> list[str]:
     """Split text into fixed-length chunks with overlap, respecting line boundaries."""
     lines = text.split("\n")
@@ -253,6 +290,14 @@ def split_by_extension(text: str, ext: str, filename: str = "") -> list[str]:
         return split_rust(text)
     elif ext in (".dart",):
         return split_dart(text)
+    elif ext in (".go",):
+        return split_go(text)
+    elif ext in (".ts", ".tsx", ".js", ".jsx"):
+        return split_typescript_javascript(text)
+    elif ext in (".swift",):
+        return split_swift(text)
+    elif ext in (".kt",):
+        return split_kotlin(text)
     else:
         return split_fixed_length(text)
 
@@ -313,19 +358,33 @@ def _get_submodule_paths(root: Path) -> set[Path]:
     return paths
 
 
+def _load_gitignore(root: Path):
+    """Load .gitignore patterns using pathspec. Returns None if not available."""
+    gitignore = root / ".gitignore"
+    if not gitignore.exists():
+        return None
+    try:
+        import pathspec
+        lines = gitignore.read_text(encoding="utf-8").splitlines()
+        return pathspec.PathSpec.from_lines("gitignore", lines)
+    except ImportError:
+        return None
+
+
 def collect_files(
     path: str, extensions: set[str] | None = None
 ) -> list[Path]:
     """Collect all supported files in a directory recursively.
 
     Skips hidden directories, build/output directories (detected by content),
-    git submodules, and unsupported file types.
+    git submodules, .gitignore patterns, and unsupported file types.
     """
     import os
 
     root = Path(path).resolve()
     allowed = extensions or SUPPORTED_EXTENSIONS
     submodule_paths = _get_submodule_paths(root)
+    gitignore_spec = _load_gitignore(root)
     files = []
 
     for dirpath_str, dirnames, filenames in os.walk(root):
@@ -338,12 +397,23 @@ def collect_files(
             and not _is_build_directory(dirpath / d)
             and (dirpath / d).resolve() not in submodule_paths
         ]
+        # Filter by .gitignore
+        if gitignore_spec:
+            dirnames[:] = [
+                d for d in dirnames
+                if not gitignore_spec.match_file(str((dirpath / d).relative_to(root)) + "/")
+            ]
         dirnames.sort()
 
         for fname in sorted(filenames):
             if fname.startswith("."):
                 continue
             fpath = dirpath / fname
+            # Check .gitignore
+            if gitignore_spec:
+                rel = str(fpath.relative_to(root))
+                if gitignore_spec.match_file(rel):
+                    continue
             if fpath.suffix.lower() in allowed or fname.lower() in WHOLE_FILE_NAMES:
                 files.append(fpath)
 

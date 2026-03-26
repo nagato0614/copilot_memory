@@ -85,6 +85,75 @@ def cmd_init(args: argparse.Namespace) -> None:
     print("Done! Memory instructions have been added to your project.")
 
 
+def cmd_search(args: argparse.Namespace) -> None:
+    """Handle the 'search' subcommand."""
+    from .search import hybrid_search
+    import datetime
+
+    results = hybrid_search(args.query, limit=args.limit, project=args.project)
+    if not results:
+        print("No results found.")
+        return
+
+    for i, r in enumerate(results, 1):
+        dt = datetime.datetime.fromtimestamp(r.created_at).strftime("%Y-%m-%d")
+        # Truncate content for display
+        content_preview = r.content.replace("\n", " ")
+        if len(content_preview) > 120:
+            content_preview = content_preview[:117] + "..."
+        print(f"[{r.score:.2f}] {content_preview}")
+        meta = f"       project: {r.project or '-'}"
+        if r.source_path:
+            meta += f" | source: {r.source_path}"
+        meta += f" | tags: {r.tags if hasattr(r, 'tags') and r.tags else '-'} | {dt}"
+        print(meta)
+        if i < len(results):
+            print()
+
+
+def cmd_stats() -> None:
+    """Handle the 'stats' subcommand."""
+    from .db import get_connection
+    from . import config
+
+    conn = get_connection()
+
+    # Total chunks
+    total = list(conn.execute("SELECT COUNT(*) FROM chunks"))[0][0]
+    conversation = list(conn.execute("SELECT COUNT(*) FROM chunks WHERE source_path = ''"))[0][0]
+    ingested = list(conn.execute("SELECT COUNT(*) FROM chunks WHERE source_path != ''"))[0][0]
+
+    # Projects
+    projects = [
+        row[0] for row in conn.execute(
+            "SELECT DISTINCT project FROM chunks WHERE project != '' ORDER BY project"
+        )
+    ]
+
+    # DB size
+    db_path = config.DB_PATH
+    if db_path.exists():
+        size_bytes = db_path.stat().st_size
+        if size_bytes > 1024 * 1024:
+            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+    else:
+        size_str = "N/A"
+
+    # Model
+    model = config.EMBEDDING_MODEL
+
+    print("Memory Database Statistics:")
+    print(f"  Total chunks:     {total}")
+    print(f"  Conversation:     {conversation}  (save_memory / hook)")
+    print(f"  File ingested:    {ingested}  (ingest)")
+    print(f"  Projects:         {len(projects)}  ({', '.join(projects) if projects else '-'})")
+    print(f"  DB size:          {size_str}")
+    print(f"  DB path:          {db_path}")
+    print(f"  Model:            {model}")
+
+
 def cmd_ingest(args: argparse.Namespace) -> None:
     """Handle the 'ingest' subcommand."""
     from .ingest import ingest_file, ingest_directory, list_ingested
@@ -244,6 +313,13 @@ def main() -> None:
     ingest_parser.add_argument("--list", action="store_true", help="List ingested files")
     ingest_parser.add_argument("--remove", metavar="PATH", help="Remove ingested file from memory")
 
+    search_parser = subparsers.add_parser("search", help="Search memory from the command line")
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
+    search_parser.add_argument("--project", default="", help="Filter by project name")
+
+    subparsers.add_parser("stats", help="Show memory database statistics")
+
     uninstall_parser = subparsers.add_parser("uninstall", help="Remove copilot-memory installation (~/.copilot-memory/)")
     uninstall_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
@@ -257,6 +333,10 @@ def main() -> None:
     elif args.command == "hook-search":
         from .hook import handle_prompt_hook
         handle_prompt_hook()
+    elif args.command == "search":
+        cmd_search(args)
+    elif args.command == "stats":
+        cmd_stats()
     elif args.command == "ingest":
         cmd_ingest(args)
     elif args.command == "uninstall":

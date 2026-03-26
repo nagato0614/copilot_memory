@@ -152,6 +152,8 @@ GitHub Copilotにはフック機能がないため、MCPツール + プロンプ
 | `copilot-memory ingest <path>` | ファイル/ディレクトリをメモリに登録 |
 | `copilot-memory ingest --list` | 登録済みファイル一覧 |
 | `copilot-memory ingest --remove <path>` | 登録済みファイルを削除 |
+| `copilot-memory search <query>` | ターミナルからメモリを検索 |
+| `copilot-memory stats` | DB統計を表示 |
 | `copilot-memory uninstall` | `~/.copilot-memory/` を削除 |
 
 ## ファイル登録（ingest）
@@ -184,8 +186,14 @@ copilot-memory ingest --list
 | Java | `.java` | メソッド/クラス単位 |
 | Rust | `.rs` | fn/impl 単位 |
 | Dart | `.dart` | class/関数単位 |
+| Go | `.go` | func/type 単位 |
+| TypeScript/JS | `.ts`, `.tsx`, `.js`, `.jsx` | export/function/class 単位 |
+| Swift | `.swift` | func/class/struct 単位 |
+| Kotlin | `.kt` | fun/class/object 単位 |
 | Docker Compose | `compose.yml` | ファイル全体 |
 | その他 | `.txt`, `.json`, `.yaml` 等 | 固定長分割 |
+
+`.gitignore` のパターンを自動的に尊重します。
 
 同じファイルを再実行すると、古いチャンクは自動で削除されて再登録されます。
 

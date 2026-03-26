@@ -12,6 +12,10 @@ from copilot_memory.ingest import (
     split_python,
     split_c_cpp,
     split_rust,
+    split_go,
+    split_typescript_javascript,
+    split_swift,
+    split_kotlin,
     split_whole,
     split_fixed_length,
     split_by_extension,
@@ -272,6 +276,43 @@ def test_ingest_directory_skips_hidden(tmp_memory_dir, tmp_path):
     paths = {r["path"] for r in results}
     assert any("visible.py" in p for p in paths)
     assert not any("secret.py" in p for p in paths)
+
+
+def test_split_go():
+    text = 'package main\n\nimport "fmt"\n\nfunc hello() {\n\tfmt.Println("hello")\n}\n\nfunc world() {\n\tfmt.Println("world")\n}\n'
+    chunks = split_go(text)
+    assert len(chunks) >= 2
+
+
+def test_split_typescript():
+    text = 'import { useState } from "react";\n\nexport function App() {\n  return <div />;\n}\n\nexport class Service {\n  run() {}\n}\n\nconst helper = () => {\n  return 42;\n};\n'
+    chunks = split_typescript_javascript(text)
+    assert len(chunks) >= 2
+
+
+def test_split_swift():
+    text = 'import Foundation\n\nfunc greet(name: String) -> String {\n    return "Hello, \\(name)"\n}\n\nclass MyClass {\n    func method() {\n        print("hi")\n    }\n}\n'
+    chunks = split_swift(text)
+    assert len(chunks) >= 2
+
+
+def test_split_kotlin():
+    text = 'package com.example\n\nfun main() {\n    println("Hello")\n}\n\nclass MyClass {\n    fun method() {\n        println("hi")\n    }\n}\n\ndata class User(val name: String)\n'
+    chunks = split_kotlin(text)
+    assert len(chunks) >= 2
+
+
+def test_ingest_directory_gitignore(tmp_memory_dir, tmp_path):
+    """Files matching .gitignore patterns are skipped."""
+    (tmp_path / "app.py").write_text('def app():\n    """Main app."""\n    return True\n')
+    (tmp_path / "debug.log").write_text("2026-03-26 ERROR something happened\n" * 5)
+    (tmp_path / ".gitignore").write_text("*.log\n")
+
+    from copilot_memory.ingest import collect_files
+    files = collect_files(str(tmp_path))
+    names = {f.name for f in files}
+    assert "app.py" in names
+    assert "debug.log" not in names
 
 
 def test_ingest_directory_skips_submodules(tmp_memory_dir, tmp_path):
