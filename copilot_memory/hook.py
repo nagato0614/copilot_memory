@@ -170,14 +170,13 @@ def handle_stop_hook() -> None:
         cwd = event.get("cwd", "")
         project = Path(cwd).name if cwd else ""
 
-        question = _truncate(user_text, 500)
-        answer = _truncate(assistant_text, 2000)
+        content = _truncate(user_text, 500) + "\n" + _truncate(assistant_text, 2000)
 
-        logger.info("Saving: question=%s answer=%s...", question[:80], answer[:80])
+        logger.info("Saving: content=%s...", content[:120])
 
         from .storage import save_chunk
 
-        result = save_chunk(question=question, answer=answer, project=project)
+        result = save_chunk(content=content, project=project)
         logger.info("Saved memory: id=%s status=%s project=%s", result.id, result.status, project)
 
     except Exception as e:
@@ -220,7 +219,7 @@ def handle_prompt_hook() -> None:
         # Output to stdout — Claude Code injects this as context
         lines = ["[copilot-memory] 関連する過去の記憶:"]
         for r in results:
-            lines.append(f"- [{r.project or 'general'}] {r.question}: {r.answer}")
+            lines.append(f"- [{r.project or 'general'}] {r.content}")
         print("\n".join(lines))
 
     except Exception as e:

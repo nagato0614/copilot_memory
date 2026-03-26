@@ -98,7 +98,7 @@ Claude Codeでは2つのフックで検索・保存を完全自動化します:
 | フック | タイミング | 動作 |
 |---|---|---|
 | `UserPromptSubmit` | ユーザーが入力確定 | メモリを検索し、関連コンテキストをClaudeに自動注入 |
-| `Stop` | Claude応答完了 | 最後のQ&Aペアを自動保存 |
+| `Stop` | Claude応答完了 | 最後のやり取りを自動保存 |
 
 - LLMに`search_memory`/`save_memory`を呼ばせる必要がない（確実に動作）
 - `install.sh` または `copilot-memory init --claude` で自動設定
@@ -123,12 +123,11 @@ GitHub Copilotにはフック機能がないため、MCPツール + プロンプ
 
 ### `save_memory`
 
-記憶を保存します。質問だけでなく、作業記録・設計決定・知見なども保存できます。
+記憶を保存します。設計決定・作業記録・知見・議論など何でも保存できます。
 
 | パラメータ | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| `question` | str | (必須) | トピック・質問・作業名 |
-| `answer` | str | (必須) | 要約（2-5文） |
+| `content` | str | (必須) | 自然言語テキスト（2-5文、具体的に） |
 | `project` | str | "" | プロジェクト名 |
 | `tags` | str | "" | カンマ区切りのタグ |
 
@@ -150,7 +149,45 @@ GitHub Copilotにはフック機能がないため、MCPツール + プロンプ
 | `copilot-memory init` | プロジェクトにプロンプト追記 + エディタ設定 |
 | `copilot-memory hook-save` | Claude Code Stopフックハンドラ（内部用） |
 | `copilot-memory hook-search` | Claude Code UserPromptSubmitフックハンドラ（内部用） |
+| `copilot-memory ingest <path>` | ファイル/ディレクトリをメモリに登録 |
+| `copilot-memory ingest --list` | 登録済みファイル一覧 |
+| `copilot-memory ingest --remove <path>` | 登録済みファイルを削除 |
 | `copilot-memory uninstall` | `~/.copilot-memory/` を削除 |
+
+## ファイル登録（ingest）
+
+プロジェクトのドキュメントやソースコードを事前にメモリに登録できます。登録した内容は `search_memory` で会話メモリと一緒に検索されます。
+
+```bash
+# ファイル単体を登録
+copilot-memory ingest path/to/design.md
+
+# ディレクトリを再帰的に登録
+copilot-memory ingest docs/
+
+# 特定の拡張子のみ
+copilot-memory ingest src/ --ext .cpp,.java,.py
+
+# 登録済みファイル一覧
+copilot-memory ingest --list
+```
+
+### 対応ファイル形式
+
+| 形式 | 拡張子 | 分割方法 |
+|---|---|---|
+| Markdown | `.md` | 見出し単位 |
+| AsciiDoc | `.adoc` | 見出し単位 |
+| PlantUML | `.puml` | ファイル全体 |
+| Python | `.py` | def/class 単位 |
+| C/C++ | `.c`, `.cpp`, `.h`, `.hpp` | 関数単位 |
+| Java | `.java` | メソッド/クラス単位 |
+| Rust | `.rs` | fn/impl 単位 |
+| Dart | `.dart` | class/関数単位 |
+| Docker Compose | `compose.yml` | ファイル全体 |
+| その他 | `.txt`, `.json`, `.yaml` 等 | 固定長分割 |
+
+同じファイルを再実行すると、古いチャンクは自動で削除されて再登録されます。
 
 ## 技術詳細
 
@@ -168,7 +205,8 @@ GitHub Copilotにはフック機能がないため、MCPツール + プロンプ
 | `COPILOT_MEMORY_DIR` | `~/.copilot-memory` | データディレクトリ |
 | `COPILOT_MEMORY_MODEL` | `intfloat/multilingual-e5-large` | 埋め込みモデル名 |
 
-> **注意**: モデルを変更した場合、埋め込み次元が変わるため既存のDBは再作成が必要です。`~/.copilot-memory/memory.db` を削除してから再起動してください。
+> **注意**: v0.2.0 はv0.1.x と DB互換性がありません。アップグレード時は `~/.copilot-memory/memory.db` を削除してください。
+> モデルを変更した場合も同様にDBの再作成が必要です。
 
 ## ライセンス
 

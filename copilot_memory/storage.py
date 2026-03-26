@@ -18,12 +18,11 @@ def _fetchone(conn, sql, params=()):
 
 
 def save_chunk(
-    question: str, answer: str, project: str = "", tags: str = ""
+    content: str, project: str = "", tags: str = "", source_path: str = ""
 ) -> SaveResult:
-    """Save a Q&A pair, deduplicating against existing chunks."""
+    """Save a content chunk, deduplicating against existing chunks."""
     conn = get_connection()
-    text = question + "\n" + answer
-    embedding = embed_passage(text)
+    embedding = embed_passage(content)
     embedding_bytes = serialize_float32(embedding)
 
     # Dedup: find nearest neighbor
@@ -51,9 +50,9 @@ def save_chunk(
     chunk_id = uuid.uuid4().hex
     now = time.time()
     conn.execute(
-        "INSERT INTO chunks (id, question, answer, project, tags, created_at, updated_at) "
+        "INSERT INTO chunks (id, content, project, tags, source_path, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (chunk_id, question, answer, project, tags, now, now),
+        (chunk_id, content, project, tags, source_path, now, now),
     )
 
     # Get the rowid of the newly inserted chunk
@@ -69,34 +68,60 @@ def save_chunk(
     return SaveResult(id=chunk_id, status="saved")
 
 
-def split_conversation(text: str) -> list[tuple[str, str]]:
-    """Split conversation text into (question, answer) pairs."""
+def delete_by_source_path(source_path: str) -> int:
+    """Delete all chunks with the given source_path. Returns count deleted."""
+    conn = get_connection()
+    rows = list(conn.execute(
+        "SELECT rowid FROM chunks WHERE source_path = ?", (source_path,)
+    ))
+    if not rows:
+        return 0
+    rowids = [r[0] for r in rows]
+    placeholders = ",".join("?" for _ in rowids)
+    # Delete from vec index first
+    conn.execute(
+        f"DELETE FROM chunks_vec WHERE rowid IN ({placeholders})", rowids
+    )
+    # Delete from chunks (FTS triggers handle chunks_fts cleanup)
+    conn.execute(
+        f"DELETE FROM chunks WHERE rowid IN ({placeholders})", rowids
+    )
+    return len(rowids)
+
+
+def split_conversation(text: str) -> list[str]:
+    """Split conversation text into content chunks (one per turn)."""
     user_pattern = r"(?:^|\n)\s*(?:User|Human|Q)\s*[:\-]\s*"
     assistant_pattern = r"(?:^|\n)\s*(?:Assistant|AI|A|Copilot|Claude)\s*[:\-]\s*"
 
     parts = re.split(user_pattern, text, flags=re.IGNORECASE)
 
-    pairs = []
+    chunks = []
     for part in parts:
         if not part.strip():
             continue
         answer_split = re.split(assistant_pattern, part, maxsplit=1, flags=re.IGNORECASE)
         if len(answer_split) == 2:
-            pairs.append((answer_split[0].strip(), answer_split[1].strip()))
+            q = answer_split[0].strip()
+            a = answer_split[1].strip()
+            if q and a:
+                chunks.append(f"{q}\n{a}")
+            elif q:
+                chunks.append(q)
         elif part.strip():
-            pairs.append((part.strip(), ""))
+            chunks.append(part.strip())
 
-    return [(q, a) for q, a in pairs if q]
+    return [c for c in chunks if c]
 
 
 def save_conversation(conversation: str, project: str = "") -> ConversationSaveResult:
     """Parse and save a multi-turn conversation."""
-    pairs = split_conversation(conversation)
+    chunks = split_conversation(conversation)
     saved = 0
     deduped = 0
 
-    for question, answer in pairs:
-        result = save_chunk(question, answer, project=project)
+    for content in chunks:
+        result = save_chunk(content, project=project)
         if result.status == "saved":
             saved += 1
         else:

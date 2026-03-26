@@ -85,6 +85,64 @@ def cmd_init(args: argparse.Namespace) -> None:
     print("Done! Memory instructions have been added to your project.")
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Handle the 'ingest' subcommand."""
+    from .ingest import ingest_file, ingest_directory, list_ingested
+    from .storage import delete_by_source_path
+
+    if args.list:
+        files = list_ingested()
+        if not files:
+            print("No ingested files.")
+            return
+        for f in files:
+            print(f"  {f['path']}  ({f['chunks']} chunks)")
+        print(f"\nTotal: {len(files)} files")
+        return
+
+    if args.remove:
+        abs_path = str(pathlib.Path(args.remove).resolve())
+        deleted = delete_by_source_path(abs_path)
+        if deleted:
+            print(f"[OK] Removed {deleted} chunks for {abs_path}")
+        else:
+            print(f"No chunks found for {abs_path}")
+        return
+
+    if not args.path:
+        print("Error: path is required (use 'copilot-memory ingest <path>')")
+        sys.exit(1)
+
+    target = pathlib.Path(args.path)
+    if not target.exists():
+        print(f"Error: {args.path} does not exist")
+        sys.exit(1)
+
+    project = args.project or target.resolve().parent.name
+
+    if target.is_file():
+        result = ingest_file(str(target), project=project)
+        print(
+            f"[OK] {result['path']}: "
+            f"{result['chunks_saved']} saved, "
+            f"{result['chunks_deduped']} deduped, "
+            f"{result['deleted_old']} old deleted"
+        )
+    elif target.is_dir():
+        extensions = None
+        if args.ext:
+            extensions = {e.strip() if e.startswith(".") else f".{e.strip()}" for e in args.ext.split(",")}
+        results = ingest_directory(str(target), project=project, extensions=extensions)
+        total_saved = sum(r["chunks_saved"] for r in results)
+        total_deduped = sum(r["chunks_deduped"] for r in results)
+        for r in results:
+            print(f"  {r['path']}: {r['chunks_saved']} saved, {r['chunks_deduped']} deduped")
+        print(f"\n[OK] {len(results)} files: {total_saved} chunks saved, {total_deduped} deduped")
+    else:
+        print(f"Error: {args.path} is not a file or directory")
+        sys.exit(1)
+
+
 def cmd_uninstall(args: argparse.Namespace) -> None:
     """Handle the 'uninstall' subcommand. Removes ~/.copilot-memory/ entirely."""
     from .config import MEMORY_DIR
@@ -146,6 +204,13 @@ def main() -> None:
     subparsers.add_parser("hook-save", help="Save memory from Claude Code Stop hook (reads stdin)")
     subparsers.add_parser("hook-search", help="Search memory from Claude Code UserPromptSubmit hook (reads stdin)")
 
+    ingest_parser = subparsers.add_parser("ingest", help="Ingest files into memory")
+    ingest_parser.add_argument("path", nargs="?", default=None, help="File or directory path to ingest")
+    ingest_parser.add_argument("--project", default="", help="Project name")
+    ingest_parser.add_argument("--ext", default="", help="Comma-separated extensions to filter (e.g., .cpp,.java)")
+    ingest_parser.add_argument("--list", action="store_true", help="List ingested files")
+    ingest_parser.add_argument("--remove", metavar="PATH", help="Remove ingested file from memory")
+
     uninstall_parser = subparsers.add_parser("uninstall", help="Remove copilot-memory installation (~/.copilot-memory/)")
     uninstall_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
@@ -159,6 +224,8 @@ def main() -> None:
     elif args.command == "hook-search":
         from .hook import handle_prompt_hook
         handle_prompt_hook()
+    elif args.command == "ingest":
+        cmd_ingest(args)
     elif args.command == "uninstall":
         cmd_uninstall(args)
     elif args.command == "serve":

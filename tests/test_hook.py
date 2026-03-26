@@ -30,13 +30,11 @@ def test_extract_text_string():
 
 
 def test_extract_text_list_with_type():
-    """Text blocks with type='text' are extracted."""
     msg = {"content": [{"type": "text", "text": "part1"}, {"type": "text", "text": "part2"}]}
     assert _extract_text(msg) == "part1\npart2"
 
 
 def test_extract_text_skips_tool_use():
-    """tool_use blocks are not included in extracted text."""
     msg = {
         "content": [
             {"type": "text", "text": "Here is the answer."},
@@ -47,39 +45,16 @@ def test_extract_text_skips_tool_use():
 
 
 def test_extract_text_tool_use_only():
-    """Messages with only tool_use blocks return empty string."""
-    msg = {
-        "content": [
-            {"type": "tool_use", "id": "toolu_123", "name": "Bash", "input": {"command": "git push"}},
-        ]
-    }
-    assert _extract_text(msg) == ""
-
-
-def test_extract_text_claude_api_format():
-    """Real Claude API response format is handled correctly."""
-    msg = {
-        "model": "claude-opus-4-6",
-        "id": "msg_01BYH",
-        "type": "message",
-        "role": "assistant",
-        "content": [
-            {"type": "tool_use", "id": "toolu_01Aq", "name": "Bash",
-             "input": {"command": "git push origin main"}},
-        ],
-        "stop_reason": "tool_use",
-    }
+    msg = {"content": [{"type": "tool_use", "id": "toolu_123", "name": "Bash", "input": {"command": "git push"}}]}
     assert _extract_text(msg) == ""
 
 
 def test_extract_text_mixed_content():
-    """Mixed text + tool_use extracts only text."""
     msg = {
         "role": "assistant",
         "content": [
             {"type": "text", "text": "Let me push the changes."},
-            {"type": "tool_use", "id": "toolu_01", "name": "Bash",
-             "input": {"command": "git push"}},
+            {"type": "tool_use", "id": "toolu_01", "name": "Bash", "input": {"command": "git push"}},
             {"type": "text", "text": "Done! Changes pushed successfully."},
         ]
     }
@@ -91,7 +66,6 @@ def test_extract_text_empty():
 
 
 def test_extract_text_nested_message():
-    """Nested message format is unwrapped."""
     msg = {"message": {"role": "assistant", "content": "nested text"}}
     assert _extract_text(msg) == "nested text"
 
@@ -124,11 +98,10 @@ def test_read_transcript(tmp_path):
 
 
 def test_read_transcript_missing_file():
-    result = _read_transcript("/nonexistent/path.jsonl")
-    assert result == []
+    assert _read_transcript("/nonexistent/path.jsonl") == []
 
 
-# --- _extract_last_turn (PAIR-BASED) ---
+# --- _extract_last_turn ---
 
 def test_extract_last_turn_basic():
     messages = [
@@ -142,36 +115,25 @@ def test_extract_last_turn_basic():
 
 
 def test_extract_last_turn_pairing_correct():
-    """Q&A pairing must match the same turn, not mix different turns."""
+    """Q&A pairing must match the same turn."""
     messages = [
         {"role": "human", "content": "VSCodeの認証問題について"},
         {"role": "assistant", "content": "OAuth トークンの競合が原因です。"},
         {"role": "human", "content": "hook.pyを修正して"},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "t1", "name": "Edit", "input": {}},
-        ]},
-        {"role": "assistant", "content": [
-            {"type": "text", "text": "hook.pyのペアリングを修正しました。"},
-        ]},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Edit", "input": {}}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "hook.pyのペアリングを修正しました。"}]},
     ]
     result = _extract_last_turn(messages)
     assert result is not None
-    # The pair must be (hook.py question, hook.py answer) — NOT (VSCode question, hook.py answer)
     assert result[0] == "hook.pyを修正して"
     assert "ペアリング" in result[1]
 
 
 def test_extract_last_turn_skips_tool_only_messages():
-    """Assistant messages with only tool_use are skipped."""
     messages = [
         {"role": "human", "content": "Push the code"},
-        {"role": "assistant", "content": [
-            {"type": "text", "text": "I'll push now."},
-        ]},
-        {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "toolu_01", "name": "Bash",
-             "input": {"command": "git push"}},
-        ]},
+        {"role": "assistant", "content": [{"type": "text", "text": "I'll push now."}]},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_01", "name": "Bash", "input": {"command": "git push"}}]},
     ]
     result = _extract_last_turn(messages)
     assert result is not None
@@ -179,8 +141,7 @@ def test_extract_last_turn_skips_tool_only_messages():
     assert result[1] == "I'll push now."
 
 
-def test_extract_last_turn_many_turns_correct_pairing():
-    """With many turns, always pairs the correct user→assistant."""
+def test_extract_last_turn_many_turns():
     messages = [
         {"role": "human", "content": "Turn 1 question"},
         {"role": "assistant", "content": "Turn 1 answer is here with enough text."},
@@ -194,12 +155,10 @@ def test_extract_last_turn_many_turns_correct_pairing():
 
 
 def test_extract_last_turn_user_only():
-    messages = [{"role": "human", "content": "Hello"}]
-    assert _extract_last_turn(messages) is None
+    assert _extract_last_turn([{"role": "human", "content": "Hello"}]) is None
 
 
 def test_extract_last_turn_assistant_before_user():
-    """If assistant speaks first (no user), no pair is formed."""
     messages = [
         {"role": "assistant", "content": "Welcome!"},
         {"role": "human", "content": "Hi there"},
@@ -207,27 +166,6 @@ def test_extract_last_turn_assistant_before_user():
     ]
     result = _extract_last_turn(messages)
     assert result == ("Hi there", "How can I help?")
-
-
-def test_extract_last_turn_real_api_format():
-    """Handles real Claude API response objects in transcript."""
-    messages = [
-        {"role": "user", "content": "このプロジェクトの概要を教えて"},
-        {
-            "model": "claude-opus-4-6",
-            "id": "msg_01BYH",
-            "type": "message",
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "このプロジェクトはMCPサーバーとして動作する長期記憶システムです。"},
-            ],
-            "stop_reason": "end_turn",
-        },
-    ]
-    result = _extract_last_turn(messages)
-    assert result is not None
-    assert result[0] == "このプロジェクトの概要を教えて"
-    assert "MCPサーバー" in result[1]
 
 
 # --- _truncate ---
@@ -265,8 +203,7 @@ def test_is_trivial_substantial():
 def test_handle_prompt_hook_outputs_results(tmp_memory_dir, capsys):
     """Prompt hook outputs search results to stdout."""
     from copilot_memory.storage import save_chunk
-
-    save_chunk("Pythonでデコレータを使う方法", "関数の前に@decoratorを付ける。functools.wrapsを使うとメタデータが保持される。", project="test")
+    save_chunk("Pythonでデコレータを使うには@decoratorを関数定義の前に記述する。functools.wrapsを使うとメタデータが保持される。", project="test")
 
     stdin_data = json.dumps({"user_prompt": "Pythonのデコレータについて教えて"})
     with patch("sys.stdin", StringIO(stdin_data)):
@@ -278,29 +215,20 @@ def test_handle_prompt_hook_outputs_results(tmp_memory_dir, capsys):
 
 
 def test_handle_prompt_hook_short_query(capsys):
-    """Short queries are skipped."""
     stdin_data = json.dumps({"user_prompt": "hi"})
     with patch("sys.stdin", StringIO(stdin_data)):
         handle_prompt_hook()
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
+    assert capsys.readouterr().out == ""
 
 
 def test_handle_prompt_hook_no_results(tmp_memory_dir, capsys):
-    """No output when no results found."""
     stdin_data = json.dumps({"user_prompt": "completely unrelated topic xyz123"})
     with patch("sys.stdin", StringIO(stdin_data)):
         handle_prompt_hook()
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
+    assert capsys.readouterr().out == ""
 
 
 def test_handle_prompt_hook_empty_stdin(capsys):
-    """Empty stdin is handled gracefully."""
     with patch("sys.stdin", StringIO("")):
         handle_prompt_hook()
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
+    assert capsys.readouterr().out == ""

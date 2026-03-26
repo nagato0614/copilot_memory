@@ -67,25 +67,25 @@ def hybrid_search(
 
     placeholders = ",".join("?" for _ in rowids)
     rows = list(conn.execute(
-        f"SELECT rowid, id, question, answer, project, created_at "
+        f"SELECT rowid, id, content, project, source_path, created_at "
         f"FROM chunks WHERE rowid IN ({placeholders})",
         rowids,
     ))
 
     chunk_map = {}
     for row in rows:
-        rowid, chunk_id, question, answer, proj, created_at = row
+        rowid, chunk_id, content, proj, src_path, created_at = row
         age = now - created_at
         decay = 0.5 ** (age / half_life_seconds)
         scores[rowid] *= decay
-        chunk_map[rowid] = (chunk_id, question, answer, proj, created_at)
+        chunk_map[rowid] = (chunk_id, content, proj, src_path, created_at)
 
     # 5. Filter by project
     if project:
         scored_rowids = [
             (rid, s)
             for rid, s in scores.items()
-            if rid in chunk_map and chunk_map[rid][3] == project
+            if rid in chunk_map and chunk_map[rid][2] == project
         ]
     else:
         scored_rowids = [
@@ -96,13 +96,13 @@ def hybrid_search(
     scored_rowids.sort(key=lambda x: x[1], reverse=True)
     results = []
     for rid, score in scored_rowids[:limit]:
-        chunk_id, question, answer, proj, created_at = chunk_map[rid]
+        chunk_id, content, proj, src_path, created_at = chunk_map[rid]
         results.append(
             SearchResult(
                 id=chunk_id,
-                question=question,
-                answer=answer,
+                content=content,
                 project=proj,
+                source_path=src_path,
                 score=score,
                 created_at=created_at,
             )

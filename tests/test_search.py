@@ -6,9 +6,9 @@ from copilot_memory.storage import save_chunk
 
 def _seed_data(tmp_memory_dir):
     """Insert test data for search tests."""
-    save_chunk("Pythonでリスト内包表記の使い方", "リスト内包表記は [expr for item in iterable] の形式です", project="python")
-    save_chunk("asyncioの基本的な使い方", "asyncio.run()でコルーチンを実行します", project="python")
-    save_chunk("DockerでMCPサーバーを起動する方法", "docker run -i で stdin/stdout をパイプします", project="infra")
+    save_chunk("Pythonでリスト内包表記を使う方法: [expr for item in iterable] の形式で新しいリストを生成する。", project="python")
+    save_chunk("asyncioの基本的な使い方: asyncio.run()でコルーチンを実行し、awaitでI/O待ちを非同期化する。", project="python")
+    save_chunk("DockerでMCPサーバーを起動する方法: docker run -i でstdin/stdoutをパイプしてstdio transportで接続する。", project="infra")
 
 
 def test_fts_escape_basic():
@@ -23,8 +23,6 @@ def test_fts_escape_basic():
 def test_fts_escape_short_tokens():
     """Short tokens (< 3 chars) are filtered out."""
     result = _fts_escape("go is ok")
-    # "go", "is", "ok" are all < 3 chars, none pass filter
-    # But full query "go is ok" >= 3 chars, so falls back to full query
     assert result == '"go is ok"'
 
 
@@ -39,7 +37,7 @@ def test_hybrid_search_returns_results(tmp_memory_dir):
     _seed_data(tmp_memory_dir)
     results = hybrid_search("Pythonのリスト", limit=3)
     assert len(results) > 0
-    assert results[0].question  # has content
+    assert results[0].content
 
 
 def test_hybrid_search_relevance_ordering(tmp_memory_dir):
@@ -47,7 +45,6 @@ def test_hybrid_search_relevance_ordering(tmp_memory_dir):
     _seed_data(tmp_memory_dir)
     results = hybrid_search("Pythonのリスト内包表記", limit=3)
     assert len(results) > 0
-    # First result should be most relevant
     scores = [r.score for r in results]
     assert scores == sorted(scores, reverse=True)
 
@@ -61,11 +58,9 @@ def test_hybrid_search_project_filter(tmp_memory_dir):
 
 
 def test_hybrid_search_empty_query(tmp_memory_dir):
-    """Empty or very short query returns empty results."""
+    """Empty or very short query doesn't crash."""
     _seed_data(tmp_memory_dir)
     results = hybrid_search("ab", limit=3)
-    # Very short query may still get vector results
-    # Just verify it doesn't crash
     assert isinstance(results, list)
 
 
@@ -74,3 +69,11 @@ def test_hybrid_search_no_data(tmp_memory_dir):
     results = hybrid_search("anything", limit=5)
     assert isinstance(results, list)
     assert len(results) == 0
+
+
+def test_hybrid_search_returns_source_path(tmp_memory_dir):
+    """Search results include source_path field."""
+    save_chunk("[ファイル: /tmp/test.py]\ndef hello(): pass", source_path="/tmp/test.py", project="test")
+    results = hybrid_search("hello function", limit=3)
+    assert len(results) > 0
+    assert results[0].source_path == "/tmp/test.py"

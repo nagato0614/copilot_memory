@@ -52,7 +52,6 @@ def test_server_lists_tools(tmp_memory_dir):
     """Server lists all three tools."""
     proc = _start_server(str(tmp_memory_dir))
     try:
-        # Initialize
         _send_recv(proc, {
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {
@@ -61,11 +60,9 @@ def test_server_lists_tools(tmp_memory_dir):
                 "clientInfo": {"name": "test", "version": "1.0"}
             }
         })
-        # Send initialized notification
         proc.stdin.write((json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode())
         proc.stdin.flush()
 
-        # List tools
         resp = _send_recv(proc, {
             "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}
         })
@@ -82,7 +79,6 @@ def test_server_save_and_search(tmp_memory_dir):
     """Server can save a memory and search for it."""
     proc = _start_server(str(tmp_memory_dir))
     try:
-        # Initialize
         _send_recv(proc, {
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {
@@ -100,10 +96,9 @@ def test_server_save_and_search(tmp_memory_dir):
             "params": {
                 "name": "save_memory",
                 "arguments": {
-                    "question": "How to use decorators in Python?",
-                    "answer": "Use @decorator syntax above function definitions.",
+                    "content": "Pythonでデコレータを使うには@decorator構文を関数定義の前に記述する。functools.wrapsを使うとメタデータが保持される。",
                     "project": "test",
-                    "tags": "python"
+                    "tags": "python,decorator"
                 }
             }
         })
@@ -122,7 +117,7 @@ def test_server_save_and_search(tmp_memory_dir):
         assert resp is not None
         content = json.loads(resp["result"]["content"][0]["text"])
         assert content["count"] >= 1
-        assert "decorator" in content["results"][0]["question"].lower()
+        assert "デコレータ" in content["results"][0]["content"]
     finally:
         proc.terminate()
         proc.wait()

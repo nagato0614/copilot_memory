@@ -28,10 +28,10 @@ def _init_schema(conn: apsw.Connection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
             id          TEXT PRIMARY KEY,
-            question    TEXT NOT NULL,
-            answer      TEXT NOT NULL,
+            content     TEXT NOT NULL,
             project     TEXT DEFAULT '',
             tags        TEXT DEFAULT '',
+            source_path TEXT DEFAULT '',
             created_at  REAL NOT NULL,
             updated_at  REAL NOT NULL,
             access_count INTEGER DEFAULT 0
@@ -40,8 +40,7 @@ def _init_schema(conn: apsw.Connection) -> None:
 
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-            question,
-            answer,
+            content,
             tags,
             content='chunks',
             content_rowid='rowid',
@@ -52,24 +51,24 @@ def _init_schema(conn: apsw.Connection) -> None:
     # FTS sync triggers
     conn.execute("""
         CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-            INSERT INTO chunks_fts(rowid, question, answer, tags)
-            VALUES (new.rowid, new.question, new.answer, new.tags);
+            INSERT INTO chunks_fts(rowid, content, tags)
+            VALUES (new.rowid, new.content, new.tags);
         END
     """)
 
     conn.execute("""
         CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-            INSERT INTO chunks_fts(chunks_fts, rowid, question, answer, tags)
-            VALUES ('delete', old.rowid, old.question, old.answer, old.tags);
+            INSERT INTO chunks_fts(chunks_fts, rowid, content, tags)
+            VALUES ('delete', old.rowid, old.content, old.tags);
         END
     """)
 
     conn.execute("""
         CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
-            INSERT INTO chunks_fts(chunks_fts, rowid, question, answer, tags)
-            VALUES ('delete', old.rowid, old.question, old.answer, old.tags);
-            INSERT INTO chunks_fts(rowid, question, answer, tags)
-            VALUES (new.rowid, new.question, new.answer, new.tags);
+            INSERT INTO chunks_fts(chunks_fts, rowid, content, tags)
+            VALUES ('delete', old.rowid, old.content, old.tags);
+            INSERT INTO chunks_fts(rowid, content, tags)
+            VALUES (new.rowid, new.content, new.tags);
         END
     """)
 

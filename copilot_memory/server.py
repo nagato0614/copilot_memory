@@ -40,9 +40,9 @@ def search_memory(query: str, limit: int = 10, project: str = "") -> str:
     for r in results:
         output.append({
             "id": r.id,
-            "question": r.question,
-            "answer": r.answer,
+            "content": r.content,
             "project": r.project,
+            "source_path": r.source_path,
             "score": round(r.score, 4),
             "created_at": r.created_at,
         })
@@ -50,9 +50,7 @@ def search_memory(query: str, limit: int = 10, project: str = "") -> str:
 
 
 @mcp.tool()
-def save_memory(
-    question: str, answer: str, project: str = "", tags: str = ""
-) -> str:
+def save_memory(content: str, project: str = "", tags: str = "") -> str:
     """MANDATORY: Save knowledge to long-term memory.
 
     Call this AFTER every response — multiple times, once per distinct topic.
@@ -60,21 +58,20 @@ def save_memory(
     Automatically deduplicates near-identical entries.
 
     Args:
-        question: Topic title (short, searchable — can be a question, task name, or decision title)
-        answer: Detailed explanation (3-8 sentences with file paths, commands, reasoning)
+        content: Natural language text (2-5 sentences with file paths, commands, reasoning)
         project: Optional project/workspace name
         tags: Optional comma-separated topic tags (e.g., "python,auth,design-decision")
     """
-    result = save_chunk(question, answer, project=project, tags=tags)
+    result = save_chunk(content, project=project, tags=tags)
     return json.dumps({"id": result.id, "status": result.status})
 
 
 @mcp.tool()
 def save_conversation(conversation: str, project: str = "") -> str:
-    """Save a multi-turn conversation, automatically splitting into Q&A pairs.
+    """Save a multi-turn conversation, automatically splitting into chunks.
 
     Use this for bulk-saving conversation history. The conversation text
-    is parsed to extract individual Q&A pairs.
+    is parsed to extract individual turns.
 
     Args:
         conversation: Full conversation text with User:/Assistant: markers

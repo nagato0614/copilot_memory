@@ -4,13 +4,13 @@ from pydantic import BaseModel, Field
 
 
 class Chunk(BaseModel):
-    """A stored memory chunk (Q&A pair)."""
+    """A stored memory chunk."""
 
     id: str
-    question: str
-    answer: str
+    content: str
     project: str = ""
     tags: str = ""
+    source_path: str = ""
     created_at: float
     updated_at: float
     access_count: int = 0
@@ -20,9 +20,9 @@ class SearchResult(BaseModel):
     """A search result with score."""
 
     id: str
-    question: str
-    answer: str
+    content: str
     project: str = ""
+    source_path: str = ""
     score: float
     created_at: float
 
