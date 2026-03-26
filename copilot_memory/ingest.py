@@ -31,6 +31,85 @@ SUPPORTED_EXTENSIONS = {
 
 MIN_CHUNK_LEN = 30
 
+# Files whose presence indicates a build/output directory
+BUILD_SENTINEL_FILES = {
+    # C/C++ build
+    "CMakeCache.txt",
+    "cmake_install.cmake",
+    "compile_commands.json",
+    # Rust
+    "CACHEDIR.TAG",
+    # Java (Maven)
+    "maven-status",
+    # Dart/Flutter
+    ".dart_tool",
+}
+
+# Extensions that indicate compiled/build artifacts
+BUILD_ARTIFACT_EXTENSIONS = {
+    # C/C++ object files and libraries
+    ".o", ".obj", ".a", ".lib", ".so", ".dylib", ".dll",
+    # Java
+    ".class", ".jar", ".war", ".ear",
+    # Rust
+    ".rlib", ".rmeta", ".d",
+    # Dart
+    ".dill",
+    # Python bytecode
+    ".pyc", ".pyo",
+    # General
+    ".exe", ".bin", ".out",
+}
+
+# Directory names that are always build directories
+BUILD_DIR_NAMES = {
+    "__pycache__",
+    "node_modules",
+    ".dart_tool",
+    ".gradle",
+}
+
+# Threshold: if this fraction of files in a dir are artifacts, it's a build dir
+BUILD_ARTIFACT_RATIO = 0.5
+# Minimum number of artifact files to trigger ratio-based detection
+BUILD_ARTIFACT_MIN_COUNT = 3
+
+
+def _is_build_directory(dirpath: Path) -> bool:
+    """Detect if a directory is a build/output directory by inspecting its contents.
+
+    Checks:
+    1. Known build directory names
+    2. Presence of sentinel files (CMakeCache.txt, CACHEDIR.TAG, etc.)
+    3. High ratio of compiled artifacts (.o, .class, .jar, .pyc, etc.)
+    """
+    # Check by name
+    if dirpath.name in BUILD_DIR_NAMES:
+        return True
+
+    # Sample immediate children (don't recurse, keep it fast)
+    try:
+        children = list(dirpath.iterdir())
+    except PermissionError:
+        return True  # Can't read → skip
+
+    child_names = {c.name for c in children}
+
+    # Check sentinel files
+    if child_names & BUILD_SENTINEL_FILES:
+        return True
+
+    # Check artifact ratio among files
+    files = [c for c in children if c.is_file()]
+    if not files:
+        return False
+
+    artifact_count = sum(1 for f in files if f.suffix.lower() in BUILD_ARTIFACT_EXTENSIONS)
+    if artifact_count >= BUILD_ARTIFACT_MIN_COUNT and artifact_count / len(files) >= BUILD_ARTIFACT_RATIO:
+        return True
+
+    return False
+
 
 def _filter_chunks(chunks: list[str]) -> list[str]:
     """Filter out empty/trivial chunks, merging tiny ones into previous."""
@@ -220,16 +299,35 @@ def ingest_file(path: str, project: str = "") -> dict:
 def collect_files(
     path: str, extensions: set[str] | None = None
 ) -> list[Path]:
-    """Collect all supported files in a directory recursively."""
-    p = Path(path)
+    """Collect all supported files in a directory recursively.
+
+    Skips hidden directories, build/output directories (detected by content),
+    and unsupported file types.
+    """
+    import os
+
+    root = Path(path).resolve()
     allowed = extensions or SUPPORTED_EXTENSIONS
     files = []
-    for f in sorted(p.rglob("*")):
-        # Skip hidden files/directories (starting with .)
-        if any(part.startswith(".") for part in f.relative_to(p).parts):
-            continue
-        if f.is_file() and (f.suffix.lower() in allowed or f.name.lower() in WHOLE_FILE_NAMES):
-            files.append(f)
+
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirpath = Path(dirpath_str)
+
+        # Filter out directories in-place (prevents os.walk from descending)
+        dirnames[:] = [
+            d for d in dirnames
+            if not d.startswith(".")
+            and not _is_build_directory(dirpath / d)
+        ]
+        dirnames.sort()
+
+        for fname in sorted(filenames):
+            if fname.startswith("."):
+                continue
+            fpath = dirpath / fname
+            if fpath.suffix.lower() in allowed or fname.lower() in WHOLE_FILE_NAMES:
+                files.append(fpath)
+
     return files
 
 

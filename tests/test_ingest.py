@@ -213,6 +213,67 @@ def test_ingest_directory(tmp_memory_dir, tmp_path):
     assert not any("c.jpg" in p for p in paths)
 
 
+def test_ingest_directory_skips_build_dir_by_sentinel(tmp_memory_dir, tmp_path):
+    """Directories with build sentinel files are skipped."""
+    # Source file
+    (tmp_path / "main.cpp").write_text('int main() { return 0; }\n')
+
+    # Build directory with CMakeCache.txt sentinel
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "CMakeCache.txt").write_text("# CMake cache")
+    (build / "main.cpp.o").write_bytes(b"\x00" * 100)
+    (build / "output.cpp").write_text("// generated\nint x = 1;\n")
+
+    results = ingest_directory(str(tmp_path), project="test")
+    paths = {r["path"] for r in results}
+    assert any("main.cpp" in p for p in paths)
+    assert not any("build" in p for p in paths)
+
+
+def test_ingest_directory_skips_build_dir_by_artifacts(tmp_memory_dir, tmp_path):
+    """Directories with high ratio of compiled artifacts are skipped."""
+    (tmp_path / "src.rs").write_text('fn main() { println!("hello"); }\n')
+
+    # Directory full of .o files (artifact ratio > 50%)
+    out = tmp_path / "out"
+    out.mkdir()
+    for i in range(5):
+        (out / f"file{i}.o").write_bytes(b"\x00" * 50)
+    (out / "helper.c").write_text("void helper() {}\n")
+
+    results = ingest_directory(str(tmp_path), project="test")
+    paths = {r["path"] for r in results}
+    assert any("src.rs" in p for p in paths)
+    assert not any("out" in p for p in paths)
+
+
+def test_ingest_directory_skips_pycache(tmp_memory_dir, tmp_path):
+    """__pycache__ directories are skipped."""
+    (tmp_path / "app.py").write_text('def run():\n    """Run the app."""\n    pass\n')
+    cache = tmp_path / "__pycache__"
+    cache.mkdir()
+    (cache / "app.cpython-312.pyc").write_bytes(b"\x00" * 50)
+
+    results = ingest_directory(str(tmp_path), project="test")
+    paths = {r["path"] for r in results}
+    assert any("app.py" in p for p in paths)
+    assert not any("__pycache__" in p for p in paths)
+
+
+def test_ingest_directory_skips_hidden(tmp_memory_dir, tmp_path):
+    """Hidden directories are skipped."""
+    (tmp_path / "visible.py").write_text('def visible():\n    """Visible."""\n    pass\n')
+    hidden = tmp_path / ".hidden"
+    hidden.mkdir()
+    (hidden / "secret.py").write_text('def secret(): pass\n')
+
+    results = ingest_directory(str(tmp_path), project="test")
+    paths = {r["path"] for r in results}
+    assert any("visible.py" in p for p in paths)
+    assert not any("secret.py" in p for p in paths)
+
+
 def test_list_ingested(tmp_memory_dir, tmp_path):
     txt_file = tmp_path / "test.txt"
     txt_file.write_text("Content for listing test that is long enough.\n")
