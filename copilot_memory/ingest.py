@@ -1,6 +1,9 @@
 """File ingestion: split files into chunks and store in memory."""
 
+from __future__ import annotations
+
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from .storage import save_chunk, delete_by_source_path
@@ -214,16 +217,40 @@ def ingest_file(path: str, project: str = "") -> dict:
     }
 
 
-def ingest_directory(
-    path: str, project: str = "", extensions: set[str] | None = None
-) -> list[dict]:
-    """Ingest all supported files in a directory recursively."""
+def collect_files(
+    path: str, extensions: set[str] | None = None
+) -> list[Path]:
+    """Collect all supported files in a directory recursively."""
     p = Path(path)
     allowed = extensions or SUPPORTED_EXTENSIONS
-    results = []
+    files = []
     for f in sorted(p.rglob("*")):
+        # Skip hidden files/directories (starting with .)
+        if any(part.startswith(".") for part in f.relative_to(p).parts):
+            continue
         if f.is_file() and (f.suffix.lower() in allowed or f.name.lower() in WHOLE_FILE_NAMES):
-            results.append(ingest_file(str(f), project=project))
+            files.append(f)
+    return files
+
+
+def ingest_directory(
+    path: str,
+    project: str = "",
+    extensions: set[str] | None = None,
+    on_file: "Callable[[str, dict], None] | None" = None,
+) -> list[dict]:
+    """Ingest all supported files in a directory recursively.
+
+    Args:
+        on_file: Optional callback(file_path, result) called after each file is ingested.
+    """
+    files = collect_files(path, extensions)
+    results = []
+    for f in files:
+        result = ingest_file(str(f), project=project)
+        results.append(result)
+        if on_file:
+            on_file(str(f), result)
     return results
 
 

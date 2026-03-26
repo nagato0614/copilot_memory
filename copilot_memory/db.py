@@ -16,6 +16,7 @@ def get_connection() -> apsw.Connection:
         config.MEMORY_DIR.mkdir(parents=True, exist_ok=True)
         _connection = apsw.Connection(str(config.DB_PATH))
         _connection.execute("PRAGMA journal_mode=WAL")
+        _connection.execute("PRAGMA busy_timeout=5000")
         _connection.enable_load_extension(True)
         _connection.load_extension(sqlite_vec.loadable_path())
         _connection.enable_load_extension(False)

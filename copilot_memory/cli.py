@@ -121,6 +121,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     project = args.project or target.resolve().parent.name
 
     if target.is_file():
+        print(f"Ingesting {target} ...")
         result = ingest_file(str(target), project=project)
         print(
             f"[OK] {result['path']}: "
@@ -132,11 +133,43 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         extensions = None
         if args.ext:
             extensions = {e.strip() if e.startswith(".") else f".{e.strip()}" for e in args.ext.split(",")}
-        results = ingest_directory(str(target), project=project, extensions=extensions)
-        total_saved = sum(r["chunks_saved"] for r in results)
-        total_deduped = sum(r["chunks_deduped"] for r in results)
-        for r in results:
-            print(f"  {r['path']}: {r['chunks_saved']} saved, {r['chunks_deduped']} deduped")
+
+        from .ingest import collect_files
+        files = collect_files(str(target), extensions)
+        total = len(files)
+        if total == 0:
+            print("No supported files found.")
+            return
+
+        print(f"Found {total} files to ingest.\n")
+
+        total_saved = 0
+        total_deduped = 0
+        width = 40
+
+        def on_file(path: str, result: dict) -> None:
+            nonlocal total_saved, total_deduped
+            total_saved += result["chunks_saved"]
+            total_deduped += result["chunks_deduped"]
+
+        results = []
+        for i, f in enumerate(files, 1):
+            result = ingest_file(str(f), project=project)
+            results.append(result)
+            on_file(str(f), result)
+
+            # Progress bar
+            pct = i / total
+            filled = int(width * pct)
+            bar = "█" * filled + "░" * (width - filled)
+            rel_path = str(f)
+            try:
+                rel_path = str(f.relative_to(target.resolve()))
+            except ValueError:
+                pass
+            print(f"\r  [{bar}] {i}/{total} {rel_path}", end="", flush=True)
+
+        print()  # newline after progress bar
         print(f"\n[OK] {len(results)} files: {total_saved} chunks saved, {total_deduped} deduped")
     else:
         print(f"Error: {args.path} is not a file or directory")
