@@ -274,6 +274,24 @@ def test_ingest_directory_skips_hidden(tmp_memory_dir, tmp_path):
     assert not any("secret.py" in p for p in paths)
 
 
+def test_ingest_directory_skips_submodules(tmp_memory_dir, tmp_path):
+    """Git submodule directories are skipped."""
+    (tmp_path / "main.py").write_text('def main():\n    """Entry point."""\n    pass\n')
+
+    # Create a fake submodule directory
+    sub = tmp_path / "vendor" / "lib"
+    sub.mkdir(parents=True)
+    (sub / "util.py").write_text('def util():\n    """Vendor utility."""\n    pass\n')
+
+    # Create .gitmodules
+    (tmp_path / ".gitmodules").write_text('[submodule "vendor/lib"]\n\tpath = vendor/lib\n\turl = https://example.com/lib.git\n')
+
+    results = ingest_directory(str(tmp_path), project="test")
+    paths = {r["path"] for r in results}
+    assert any("main.py" in p for p in paths)
+    assert not any("util.py" in p for p in paths)
+
+
 def test_list_ingested(tmp_memory_dir, tmp_path):
     txt_file = tmp_path / "test.txt"
     txt_file.write_text("Content for listing test that is long enough.\n")

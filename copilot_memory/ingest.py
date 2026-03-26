@@ -296,18 +296,36 @@ def ingest_file(path: str, project: str = "") -> dict:
     }
 
 
+def _get_submodule_paths(root: Path) -> set[Path]:
+    """Read .gitmodules and return resolved submodule directory paths."""
+    gitmodules = root / ".gitmodules"
+    if not gitmodules.exists():
+        return set()
+    paths = set()
+    for line in gitmodules.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("path"):
+            # e.g. "path = vendor/lib"
+            _, _, val = line.partition("=")
+            val = val.strip()
+            if val:
+                paths.add((root / val).resolve())
+    return paths
+
+
 def collect_files(
     path: str, extensions: set[str] | None = None
 ) -> list[Path]:
     """Collect all supported files in a directory recursively.
 
     Skips hidden directories, build/output directories (detected by content),
-    and unsupported file types.
+    git submodules, and unsupported file types.
     """
     import os
 
     root = Path(path).resolve()
     allowed = extensions or SUPPORTED_EXTENSIONS
+    submodule_paths = _get_submodule_paths(root)
     files = []
 
     for dirpath_str, dirnames, filenames in os.walk(root):
@@ -318,6 +336,7 @@ def collect_files(
             d for d in dirnames
             if not d.startswith(".")
             and not _is_build_directory(dirpath / d)
+            and (dirpath / d).resolve() not in submodule_paths
         ]
         dirnames.sort()
 
