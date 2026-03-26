@@ -167,7 +167,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
                 rel_path = str(f.relative_to(target.resolve()))
             except ValueError:
                 pass
-            print(f"\r  [{bar}] {i}/{total} {rel_path}", end="", flush=True)
+            print(f"\r\033[K  [{bar}] {i}/{total} {rel_path}", end="", flush=True)
 
         print()  # newline after progress bar
         print(f"\n[OK] {len(results)} files: {total_saved} chunks saved, {total_deduped} deduped")
